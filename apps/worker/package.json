@@ -1,0 +1,23 @@
+{
+  "name": "@opencode-cloud/worker",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8787",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@opencode-cloud/shared": "workspace:*",
+    "@opencode-cloud/contree-client": "workspace:*",
+    "hono": "^4.7.0",
+    "jose": "^6.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250410.0",
+    "typescript": "^5.7.0",
+    "wrangler": "^4.0.0"
+  }
+}

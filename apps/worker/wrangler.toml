@@ -1,0 +1,15 @@
+name = "opencode-cloud"
+main = "src/index.ts"
+compatibility_date = "2025-04-01"
+
+[vars]
+ENVIRONMENT = "development"
+
+[[kv_namespaces]]
+binding = "SESSIONS_KV"
+id = "placeholder-sessions-kv-id"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "opencode-cloud"
+database_id = "placeholder-d1-id"

@@ -1,0 +1,21 @@
+{
+  "name": "@opencode-cloud/collab",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode-cloud/shared": "workspace:*",
+    "yjs": "^13.6.8",
+    "y-websocket": "^1.5.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
