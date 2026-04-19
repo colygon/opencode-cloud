@@ -1,0 +1,77 @@
+{
+  "name": "opencode.cloud",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.png",
+  "colors": {
+    "primary": "#0066FF",
+    "light": "#4D99FF",
+    "dark": "#0052CC",
+    "background": {
+      "dark": "#0F1117"
+    }
+  },
+  "topbarCtaButton": {
+    "name": "Get Started",
+    "url": "https://github.com/colygon/opencode-cloud"
+  },
+  "tabs": [
+    {
+      "name": "API",
+      "url": "api"
+    },
+    {
+      "name": "Guides",
+      "url": "guides"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": [
+        "introduction",
+        "quickstart",
+        "architecture"
+      ]
+    },
+    {
+      "group": "Core Concepts",
+      "pages": [
+        "concepts/sessions",
+        "concepts/branching",
+        "concepts/collaboration"
+      ]
+    },
+    {
+      "group": "API Reference",
+      "pages": [
+        "api/authentication",
+        "api/sessions",
+        "api/branching",
+        "api/proxy"
+      ]
+    },
+    {
+      "group": "Integration",
+      "pages": [
+        "guides/contree-setup",
+        "guides/deployment",
+        "guides/monitoring"
+      ]
+    },
+    {
+      "group": "Development",
+      "pages": [
+        "development/contributing",
+        "development/architecture",
+        "development/testing"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/colygon/opencode-cloud",
+    "twitter": "https://twitter.com"
+  }
+}

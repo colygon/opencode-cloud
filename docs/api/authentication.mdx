@@ -1,0 +1,249 @@
+---
+title: Authentication
+description: Authenticate API requests with JWT or API keys
+---
+
+# Authentication
+
+All API requests to opencode.cloud require authentication via either JWT tokens or API keys.
+
+## Authentication Methods
+
+### JWT Token
+
+Use a JSON Web Token (JWT) for authentication:
+
+```bash
+curl https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+```
+
+**Token Format:**
+```json
+{
+  "iss": "opencode.cloud",
+  "sub": "user_123",
+  "iat": 1618358400,
+  "exp": 1618444800
+}
+```
+
+**Token Lifetime:** 24 hours
+
+### API Key
+
+Use an API key for server-to-server authentication:
+
+```bash
+curl https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer oc_live_abc123xyz789...'
+```
+
+**Key Format:** 
+- Prefix: `oc_live_` (production) or `oc_test_` (testing)
+- Length: 32 random characters
+- Example: `oc_live_4f8d9a2c1e5b7a3d9f2e8c1a4b7d9a2c`
+
+## Creating API Keys
+
+API keys can be created via the web dashboard or API (once user registration is implemented in M2):
+
+```bash
+curl -X POST https://api.opencode.cloud/api/keys \
+  -H 'Authorization: Bearer <your_jwt>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "My CLI Tool",
+    "environment": "production"
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "key_abc123",
+    "key": "oc_live_4f8d9a2c1e5b7a3d9f2e8c1a4b7d9a2c",
+    "name": "My CLI Tool",
+    "environment": "production",
+    "createdAt": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+⚠️ **Save your key immediately.** We cannot show it again.
+
+## Revoking API Keys
+
+```bash
+curl -X DELETE https://api.opencode.cloud/api/keys/key_abc123 \
+  -H 'Authorization: Bearer <your_jwt>'
+```
+
+## Headers
+
+Every request requires:
+
+| Header | Value | Description |
+|--------|-------|-------------|
+| `Authorization` | `Bearer <token>` | JWT or API key |
+| `Content-Type` | `application/json` | For POST/PUT requests |
+
+## Error Responses
+
+### 401 Unauthorized
+
+```json
+{
+  "ok": false,
+  "error": "invalid_token",
+  "message": "Token signature is invalid or expired"
+}
+```
+
+**Causes:**
+- Missing or malformed `Authorization` header
+- Invalid token signature
+- Expired token
+
+### 403 Forbidden
+
+```json
+{
+  "ok": false,
+  "error": "insufficient_permissions",
+  "message": "Your API key does not have permission for this action"
+}
+```
+
+**Causes:**
+- API key lacks required scope
+- User does not own the resource
+- API key environment mismatch
+
+## Rate Limiting
+
+All authenticated requests are rate-limited:
+
+| Plan | Requests/minute | Concurrent Sessions |
+|------|-----------------|-------------------|
+| Free | 60 | 5 |
+| Pro | 600 | 50 |
+| Enterprise | Unlimited | 500+ |
+
+Rate limit headers are included in responses:
+
+```
+X-RateLimit-Limit: 600
+X-RateLimit-Remaining: 599
+X-RateLimit-Reset: 1618444800
+```
+
+When you exceed the limit:
+
+```json
+{
+  "ok": false,
+  "error": "rate_limit_exceeded",
+  "message": "Too many requests. Try again in 60 seconds",
+  "retryAfter": 60
+}
+```
+
+## Best Practices
+
+1. **Never commit API keys to version control**
+   ```bash
+   # .gitignore
+   .env
+   .env.local
+   .dev.vars
+   ```
+
+2. **Rotate keys regularly**
+   - Create new key
+   - Update applications
+   - Delete old key
+   - Minimum: once per quarter
+
+3. **Use environment-specific keys**
+   - `oc_test_` for development
+   - `oc_live_` for production
+   - Never use production keys in development
+
+4. **Scope keys to minimal permissions**
+   - Create separate keys for different tools
+   - Revoke unused keys immediately
+
+5. **Monitor key usage**
+   - Check activity logs in dashboard
+   - Set up alerts for unusual patterns
+   - Review API logs regularly
+
+## Testing Authentication
+
+### With curl
+
+```bash
+# JWT
+curl -H 'Authorization: Bearer <your_jwt>' \
+  https://api.opencode.cloud/api/sessions
+
+# API Key
+curl -H 'Authorization: Bearer oc_live_...' \
+  https://api.opencode.cloud/api/sessions
+```
+
+### With Node.js
+
+```javascript
+const response = await fetch('https://api.opencode.cloud/api/sessions', {
+  headers: {
+    'Authorization': `Bearer ${process.env.OPENCODE_API_KEY}`,
+    'Content-Type': 'application/json'
+  }
+});
+```
+
+### With Python
+
+```python
+import requests
+
+headers = {
+    'Authorization': f'Bearer {api_key}',
+    'Content-Type': 'application/json'
+}
+response = requests.get('https://api.opencode.cloud/api/sessions', 
+                       headers=headers)
+```
+
+## Common Issues
+
+### "Token expired"
+
+Create a new JWT token or refresh your existing one:
+
+```bash
+# Refresh endpoint (coming in M2)
+curl -X POST https://api.opencode.cloud/api/auth/refresh \
+  -H 'Authorization: Bearer <your_expired_jwt>'
+```
+
+### "Invalid API key prefix"
+
+API keys must begin with `oc_live_` or `oc_test_`:
+
+```
+❌ Invalid: abc123xyz789
+✅ Valid:   oc_live_abc123xyz789
+```
+
+### "Key not found"
+
+The key may have been revoked. Create a new one in the dashboard.
+
+---
+
+**Next:** [Sessions API →](/api/sessions)

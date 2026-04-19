@@ -1,0 +1,241 @@
+---
+title: Quickstart
+description: Get started with opencode.cloud in 5 minutes
+---
+
+# Quickstart
+
+Get opencode.cloud running locally and test the API in 5 minutes.
+
+## Prerequisites
+
+- **Node.js** 18+ and **pnpm** (or npm)
+- **Git**
+- A text editor or IDE
+
+## 1. Clone the Repository
+
+```bash
+git clone https://github.com/colygon/opencode-cloud.git
+cd opencode-cloud
+```
+
+## 2. Install Dependencies
+
+```bash
+pnpm install
+```
+
+This installs dependencies for all packages (worker, shared types, Contree client, collaboration layer).
+
+## 3. Start the Development Server
+
+```bash
+cd apps/worker
+pnpm dev
+```
+
+You should see:
+```
+ ⛅️ wrangler 4.82.2
+🔥 Rules enabled by environment
+[wrangler] Listening on http://localhost:8787
+```
+
+## 4. Test the Health Endpoint
+
+In another terminal:
+
+```bash
+curl http://localhost:8787/api/health
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+✅ **You're running!**
+
+## 5. Explore the API
+
+All routes require authentication. For demo purposes, here's the structure:
+
+### Create a Session
+
+```bash
+curl -X POST http://localhost:8787/api/sessions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer demo_token' \
+  -d '{
+    "repoUrl": "https://github.com/opencode-ai/opencode"
+  }'
+```
+
+Response (when Contree API key is configured):
+```json
+{
+  "ok": true,
+  "data": {
+    "session": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "userId": "user_123",
+      "status": "running",
+      "contreeInstanceId": "instance_abc123",
+      "snapshotId": "snapshot_xyz789",
+      "createdAt": "2026-04-18T10:30:45.123Z",
+      "updatedAt": "2026-04-18T10:30:45.123Z"
+    },
+    "webUrl": "https://opencode.cloud/s/550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+### List Sessions
+
+```bash
+curl http://localhost:8787/api/sessions \
+  -H 'Authorization: Bearer demo_token'
+```
+
+### Create a Snapshot (Checkpoint)
+
+```bash
+curl -X POST http://localhost:8787/api/sessions/:id/snapshot \
+  -H 'Authorization: Bearer demo_token'
+```
+
+### Fork from a Snapshot
+
+```bash
+curl -X POST http://localhost:8787/api/sessions/:id/branch \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer demo_token' \
+  -d '{
+    "snapshotId": "snapshot_xyz789",
+    "name": "experiment-1"
+  }'
+```
+
+### Rollback to a Snapshot
+
+```bash
+curl -X POST http://localhost:8787/api/sessions/:id/rollback \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer demo_token' \
+  -d '{
+    "snapshotId": "snapshot_xyz789"
+  }'
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Understand Sessions"
+    icon="box"
+    href="/concepts/sessions"
+  >
+    Learn how sessions work
+  </Card>
+  <Card
+    title="Branching Guide"
+    icon="code-branch"
+    href="/concepts/branching"
+  >
+    Explore the branching system
+  </Card>
+  <Card
+    title="Full API Reference"
+    icon="book"
+    href="/api/sessions"
+  >
+    Complete endpoint documentation
+  </Card>
+  <Card
+    title="Contree Setup"
+    icon="plug"
+    href="/guides/contree-setup"
+  >
+    Configure Contree integration
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Port Already in Use
+
+If `localhost:8787` is already in use:
+
+```bash
+lsof -i :8787
+kill -9 <PID>
+```
+
+### TypeScript Errors
+
+Make sure you're in the root directory and run:
+
+```bash
+pnpm turbo check
+```
+
+### Build Failures
+
+Clean and rebuild:
+
+```bash
+pnpm install
+pnpm turbo build
+```
+
+## What's Happening Behind the Scenes
+
+1. **Cloudflare Worker** started on `localhost:8787` with Wrangler dev server
+2. **Routes** are mounted:
+   - `/api/health` — health check
+   - `/api/sessions` — session CRUD
+   - `/api/sessions/:id/snapshot` — branching operations
+   - `/s/:sessionId/*` — proxy to opencode server
+3. **Auth middleware** checks tokens (required on all routes except `/api/health`)
+4. **Session state** persists in Cloudflare KV (or local mock in dev)
+5. **Database** (D1) is configured but not yet used (will be in M2)
+
+## Production Deployment
+
+When ready to deploy:
+
+```bash
+cd apps/worker
+pnpm deploy
+```
+
+Requires:
+- Cloudflare account + API token
+- `wrangler` logged in via `wrangler login`
+- D1 database created
+- KV namespaces created
+- Contree API key configured
+
+See [Deployment Guide](/guides/deployment) for details.
+
+## Common Questions
+
+**Q: Why does creating a session fail?**  
+A: You need a valid Contree API key in `.dev.vars`. See [Contree Setup](/guides/contree-setup).
+
+**Q: How do I authenticate without a token?**  
+A: For development, create an API key in your code and test with that. See [Authentication](/api/authentication).
+
+**Q: Can I use this with my own opencode installation?**  
+A: Currently, the platform expects opencode in Contree sandboxes. Self-hosted opencode support is on the roadmap.
+
+---
+
+**Next:** [Learn about Sessions →](/concepts/sessions)

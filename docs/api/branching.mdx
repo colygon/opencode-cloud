@@ -1,0 +1,402 @@
+---
+title: Branching API
+description: Create snapshots, branches, and manage exploration history
+---
+
+# Branching API
+
+Use snapshots and branches to explore multiple approaches safely.
+
+## Create Snapshot
+
+`POST /api/sessions/:id/snapshot`
+
+Checkpoint your current progress (immutable checkpoint).
+
+### Request
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/session_123/snapshot \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "description": "Before refactoring auth"
+  }'
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `description` | string | No | Human-readable label for this snapshot |
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "snapshot_abc123",
+    "sessionId": "session_123",
+    "parentSnapshotId": "snapshot_prev123",
+    "description": "Before refactoring auth",
+    "metadata": {
+      "filesChanged": 3,
+      "linesAdded": 45,
+      "linesRemoved": 12
+    },
+    "createdAt": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+### Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `201` | Snapshot created |
+| `400` | Invalid session ID |
+| `401` | Unauthorized |
+| `404` | Session not found |
+
+---
+
+## Create Branch
+
+`POST /api/sessions/:id/branch`
+
+Fork from a snapshot to explore a different approach.
+
+### Request
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/session_123/branch \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "snapshotId": "snapshot_abc123",
+    "name": "try-approach-a"
+  }'
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `snapshotId` | string | Yes | Snapshot ID to branch from |
+| `name` | string | No | Branch name (for display) |
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "branch_xyz789",
+    "name": "try-approach-a",
+    "parentSnapshotId": "snapshot_abc123",
+    "snapshotId": "snapshot_xyz789",
+    "createdAt": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+After branching, the session continues from the new branch. You can:
+- Continue editing (creates new snapshots on this branch)
+- Rollback to try a different approach
+- Switch back to the parent snapshot
+
+---
+
+## Rollback to Snapshot
+
+`POST /api/sessions/:id/rollback`
+
+Restore session to a previous snapshot (discard all changes after it).
+
+### Request
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/session_123/rollback \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "snapshotId": "snapshot_abc123"
+  }'
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `snapshotId` | string | Yes | Snapshot ID to restore |
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshotId": "snapshot_abc123",
+    "rolledBackAt": "2026-04-18T10:35:20.456Z",
+    "filesRestored": 5
+  }
+}
+```
+
+⚠️ **Rollback is permanent.** All changes after the snapshot are discarded.
+
+Before rolling back, create a new snapshot of your work:
+
+```bash
+# 1. Save current state
+curl -X POST https://api.opencode.cloud/api/sessions/session_123/snapshot \
+  -H 'Authorization: Bearer token'
+
+# 2. Then rollback
+curl -X POST https://api.opencode.cloud/api/sessions/session_123/rollback \
+  -H 'Authorization: Bearer token' \
+  -d '{"snapshotId": "snapshot_abc123"}'
+```
+
+---
+
+## View Branch Tree
+
+`GET /api/sessions/:id/branches`
+
+See all snapshots and branches in your exploration history.
+
+### Request
+
+```bash
+curl https://api.opencode.cloud/api/sessions/session_123/branches \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "snapshotId": "snapshot_1",
+      "parentSnapshotId": null,
+      "description": "Initial state",
+      "createdAt": "2026-04-18T10:00:00.000Z",
+      "children": [
+        {
+          "snapshotId": "snapshot_2",
+          "parentSnapshotId": "snapshot_1",
+          "description": "After user edit",
+          "createdAt": "2026-04-18T10:05:00.000Z",
+          "children": [
+            {
+              "snapshotId": "snapshot_3",
+              "parentSnapshotId": "snapshot_2",
+              "description": "Main branch - current",
+              "createdAt": "2026-04-18T10:10:00.000Z",
+              "children": []
+            },
+            {
+              "snapshotId": "snapshot_2b",
+              "parentSnapshotId": "snapshot_2",
+              "description": "Experimental approach",
+              "createdAt": "2026-04-18T10:10:00.000Z",
+              "children": [
+                {
+                  "snapshotId": "snapshot_2b-1",
+                  "parentSnapshotId": "snapshot_2b",
+                  "description": "First attempt",
+                  "createdAt": "2026-04-18T10:12:00.000Z",
+                  "children": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+The tree shows your complete exploration history as a directed acyclic graph (DAG).
+
+---
+
+## Branching Examples
+
+### Example 1: Parallel Experimentation
+
+```bash
+# 1. Create baseline snapshot
+S1=$(curl -X POST .../snapshot | jq -r '.data.id')
+
+# 2. Try approach A
+curl -X POST .../branch \
+  -d "{\"snapshotId\": \"$S1\", \"name\": \"approach-a\"}"
+# ... make edits ...
+A=$(curl -X POST .../snapshot | jq -r '.data.id')
+
+# 3. Rollback and try approach B
+curl -X POST .../rollback -d "{\"snapshotId\": \"$S1\"}"
+curl -X POST .../branch \
+  -d "{\"snapshotId\": \"$S1\", \"name\": \"approach-b\"}"
+# ... make edits ...
+B=$(curl -X POST .../snapshot | jq -r '.data.id')
+
+# 4. Compare results
+# View branch tree to see A vs B
+curl .../branches | jq '.'
+```
+
+### Example 2: Safe Debugging
+
+```bash
+# Bug appeared after this snapshot
+curl -X POST .../rollback -d '{"snapshotId": "before_bug"}'
+
+# Create branch to investigate
+curl -X POST .../branch -d '{"snapshotId": "before_bug", "name": "debug-issue"}'
+
+# Make exploratory changes...
+curl -X POST .../snapshot -d '{"description": "Isolate bug"}'
+
+# When found, rollback to main branch
+curl -X POST .../rollback -d '{"snapshotId": "main_snapshot"}'
+
+# Fix it properly
+```
+
+### Example 3: Code Review
+
+```bash
+# Reviewer branches to suggest changes
+curl -X POST .../branch \
+  -d '{"snapshotId": "review_point", "name": "review-suggestions"}'
+
+# Make suggestions...
+REVIEW=$(curl -X POST .../snapshot | jq -r '.data.id')
+
+# Original author tries alternative
+curl -X POST .../rollback -d '{"snapshotId": "review_point"}'
+curl -X POST .../branch \
+  -d '{"snapshotId": "review_point", "name": "author-alternative"}'
+
+# Both can view branch tree and compare
+```
+
+---
+
+## Snapshot Metadata
+
+Each snapshot contains:
+
+```json
+{
+  "id": "snapshot_abc123",
+  "sessionId": "session_xyz789",
+  "parentSnapshotId": "snapshot_prev123",
+  "contreeImageId": "image_sandbox_abc",
+  "description": "Before refactoring",
+  "createdAt": "2026-04-18T10:30:45.123Z",
+  "createdBy": "user_123",
+  "metadata": {
+    "branch": "main",
+    "filesChanged": 1,
+    "linesAdded": 5,
+    "linesRemoved": 2
+  }
+}
+```
+
+---
+
+## Limits
+
+| Limit | Value |
+|-------|-------|
+| Max snapshots per session | 1000 |
+| Max branch depth | Unlimited |
+| Snapshots retained | 7 days or 1000 snapshots |
+| Time to snapshot | < 5 seconds |
+| Time to rollback | < 2 seconds |
+
+---
+
+## Performance
+
+| Operation | Time | Notes |
+|-----------|------|-------|
+| Create snapshot | 1-2s | Depends on filesystem size |
+| Create branch | <100ms | Instant (just metadata) |
+| Rollback | 1-2s | Depends on snapshot size |
+| View tree | <100ms | Returns metadata only |
+
+---
+
+## Error Handling
+
+### Snapshot Not Found
+
+```json
+{
+  "ok": false,
+  "error": "snapshot_not_found",
+  "message": "Snapshot 'invalid_id' does not exist or was deleted"
+}
+```
+
+### Snapshot Expired
+
+```json
+{
+  "ok": false,
+  "error": "snapshot_expired",
+  "message": "Snapshot was deleted after 7 days"
+}
+```
+
+### Rollback Too Old
+
+```json
+{
+  "ok": false,
+  "error": "snapshot_expired",
+  "message": "Cannot rollback more than 7 days"
+}
+```
+
+---
+
+## Best Practices
+
+1. **Name snapshots meaningfully**
+   ```bash
+   ✅ "Before auth refactor"
+   ❌ "snapshot-1"
+   ```
+
+2. **Create before risky operations**
+   ```bash
+   curl -X POST .../snapshot \
+     -d '{"description": "Before major refactoring"}'
+   ```
+
+3. **Use branching for parallel work**
+   ```
+   Don't: Edit → Undo → Edit again (lossy)
+   Do:    Snapshot → Branch A → Try → Rollback → Branch B → Try
+   ```
+
+4. **Cleanup old branches**
+   ```bash
+   # Snapshots auto-delete after 7 days
+   # Manually rollback to main to save disk space
+   ```
+
+---
+
+**Next:** [Proxy API →](/api/proxy)

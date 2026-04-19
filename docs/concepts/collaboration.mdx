@@ -1,0 +1,330 @@
+---
+title: Collaboration
+description: Real-time collaboration with multiple users
+---
+
+# Collaboration
+
+**Collaboration** lets multiple users edit the same files in a session simultaneously without conflicts.
+
+## How It Works
+
+opencode.cloud uses **Yjs** — a CRDT (Conflict-free Replicated Data Type) that automatically merges concurrent edits:
+
+```
+User A edits line 5        User B edits line 10
+    ↓                           ↓
+  Yjs Update A            Yjs Update B
+    ↓                           ↓
+    └──────────────────────────┘
+            CRDT Merge
+              ↓
+        Conflict-free result
+            ↓
+    Both users see the same state
+```
+
+No manual merge required. No conflicts. No "yours vs. theirs" resolution.
+
+## Inviting Collaborators
+
+### Generate a Share Link
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/share \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "expiresIn": 3600,
+    "permissions": ["read", "write"]
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "shareToken": "share_abc123xyz789",
+    "shareUrl": "https://opencode.cloud/s/{sessionId}?share=share_abc123xyz789",
+    "expiresAt": "2026-04-18T11:30:45.123Z",
+    "permissions": ["read", "write"]
+  }
+}
+```
+
+### Send the URL
+
+Share the link with collaborators:
+```
+https://opencode.cloud/s/{sessionId}?share=share_abc123xyz789
+```
+
+They click it and can immediately start collaborating.
+
+### Permission Levels
+
+| Permission | Can Read | Can Write | Can Branch | Can Delete |
+|-----------|----------|----------|-----------|-----------|
+| `read` | ✓ | ✗ | ✗ | ✗ |
+| `write` | ✓ | ✓ | ✓ | ✗ |
+| `admin` | ✓ | ✓ | ✓ | ✓ |
+
+## Real-Time Features
+
+### See Collaborators' Cursors
+
+```
+User A's cursor:  ▌ (red)
+User B's cursor:  ▌ (blue)
+
+document.js
+  1 | function main() {
+  2 |   const x = 5;  ▌ User A
+  3 |   return x * 2; ▌ User B
+  4 | }
+```
+
+You see each collaborator's cursor position and selection in real-time.
+
+### View Presence
+
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId}/presence \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "clients": [
+      {
+        "userId": "user_123",
+        "userName": "Alice",
+        "cursorLine": 5,
+        "cursorColumn": 12,
+        "color": "#FF0000",
+        "lastSeen": "2026-04-18T10:35:20.456Z"
+      },
+      {
+        "userId": "user_456",
+        "userName": "Bob",
+        "cursorLine": 10,
+        "cursorColumn": 0,
+        "color": "#0000FF",
+        "lastSeen": "2026-04-18T10:35:19.123Z"
+      }
+    ]
+  }
+}
+```
+
+### Chat in Session
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/chat \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Try using async/await here"
+  }'
+```
+
+Messages appear in the chat panel for all collaborators to see.
+
+## Conflict Resolution (Automatic)
+
+### Example: Concurrent Edits
+
+```
+Initial state:
+  function add(a, b) { return a + b; }
+
+User A (at 10:00:00) edits:
+  function add(a, b) { return a + b + 0; }  ← adds "+ 0"
+
+User B (at 10:00:01) edits:
+  function add(a, b) { // Add two numbers
+    return a + b;
+  }  ← adds comment, keeps original
+
+Yjs CRDT Result (10:00:02):
+  function add(a, b) { // Add two numbers
+    return a + b + 0;
+  }  ← Both changes merged!
+```
+
+Both edits are preserved. No conflicts. Both users see the same result.
+
+### Why CRDT Works
+
+- **Position-independent** — Changes are tracked by content, not line numbers
+- **Commutative** — Order doesn't matter (A+B = B+A)
+- **Idempotent** — Applying same change twice has no effect
+- **Atomic** — Each keystroke is its own unit
+
+## Collaboration Limits
+
+| Limit | Value |
+|-------|-------|
+| Max concurrent users per session | 10 |
+| Max chat history | 1000 messages |
+| Cursor update frequency | 100ms |
+| Sync latency p95 | <200ms |
+
+## Collaboration Features
+
+| Feature | Status |
+|---------|--------|
+| Concurrent editing (CRDT) | ✅ |
+| Cursor presence | ✅ |
+| Chat | ✅ |
+| User presence | ✅ |
+| Selection sharing | 🔄 (in progress) |
+| Rich presence (what you're doing) | 🔄 (in progress) |
+| Conflict-free branching | ✅ |
+
+## Use Cases
+
+### Pair Programming
+
+```
+Developer A: Writing implementation
+Developer B: Writing tests simultaneously
+  ↓
+Changes merge automatically
+Both see full picture
+```
+
+### Code Review Live
+
+```
+Author: Explaining changes
+Reviewer: Suggesting edits
+  ↓
+Live discussion
+CRDT merges suggestions
+```
+
+### Team Brainstorming
+
+```
+Multiple people: Editing pseudocode
+  ↓
+Everyone sees combined result
+No merge conflicts
+```
+
+### Teaching
+
+```
+Instructor: Running opencode
+Students: Joining session
+  ↓
+Everyone sees code being written
+Instructor can revert if needed
+```
+
+## Best Practices
+
+### 1. Communicate
+
+```
+Before large refactorings, let collaborators know:
+💬 "Renaming UserModel to User across codebase (5 min)"
+```
+
+CRDT handles conflicts, but humans should communicate to avoid confusion.
+
+### 2. Use Version Control
+
+```
+Collaborate in opencode.cloud
+  ↓
+Commit to Git when stable
+  ↓
+Merge in GitHub (human review)
+```
+
+Collaboration in opencode → VCS for permanence.
+
+### 3. Create Snapshots Before Major Changes
+
+```
+Before: consensus on approach
+Snapshot
+  ↓
+Each user can branch to try ideas
+  ↓
+Come back to main snapshot to sync
+```
+
+### 4. Monitor Presence
+
+```
+See who's online and what they're doing
+Avoid duplicate work
+Coordinate on shared files
+```
+
+## Troubleshooting
+
+### Changes Not Syncing
+
+Collaborator's changes not appearing?
+
+1. Reload the page
+2. Check internet connection
+3. Verify collaborator is still in session
+
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId}/presence \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Cursor Lag
+
+If cursors are slow to update (>500ms):
+
+1. Check your internet latency
+2. Check Contree sandbox latency
+3. Contact support if consistently high
+
+### Chat Doesn't Work
+
+Verify session is running:
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+If `status: "running"`, try refreshing the page.
+
+## Architecture
+
+Collaboration is powered by:
+
+1. **Yjs** (CRDT library) — Manages document state
+2. **CollaborationServer** — Routes messages between users
+3. **WebSocket** — Real-time transport
+
+When you edit:
+```
+Edit in browser
+    ↓
+Yjs generates update (binary, compressed)
+    ↓
+Send over WebSocket
+    ↓
+CollaborationServer broadcasts to other users
+    ↓
+Other users' Yjs merges update (CRDT)
+    ↓
+Their editors reflect change (conflict-free)
+```
+
+---
+
+**Next:** [API Reference →](/api/sessions)

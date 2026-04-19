@@ -1,0 +1,384 @@
+---
+title: Contree Setup
+description: Configure Contree integration for your development environment
+---
+
+# Contree Setup
+
+Configure your local development environment to use Contree sandboxes.
+
+## Prerequisites
+
+- Node.js 18+ and pnpm
+- Contree account and API key
+- Git
+
+## 1. Get Your Contree API Key
+
+1. Sign up at [https://contree.co](https://contree.co)
+2. Navigate to **Settings → API Keys**
+3. Create a new API key for development
+4. Copy the key (you won't see it again)
+
+**Format:** `contree_live_...` (production) or `contree_test_...` (development)
+
+## 2. Configure Environment Variables
+
+### Development (Local)
+
+Create `.dev.vars` in `apps/worker/`:
+
+```bash
+cd apps/worker
+cat > .dev.vars << EOF
+CONTREE_API_KEY=contree_live_your_key_here
+CONTREE_BASE_URL=https://api.contree.co
+EOF
+```
+
+**Do NOT commit `.dev.vars` to git.**
+
+Add to `.gitignore`:
+
+```bash
+echo ".dev.vars" >> .gitignore
+```
+
+### Production (Cloudflare)
+
+Set via Wrangler:
+
+```bash
+wrangler secret put CONTREE_API_KEY
+# Paste your key when prompted
+```
+
+Verify:
+
+```bash
+wrangler secret list
+```
+
+## 3. Base Image Setup
+
+The `opencode-cloud-base` image is the starting point for all sessions.
+
+### Option A: Use Pre-built Image (Recommended)
+
+```bash
+# Once built and pushed to Docker registry
+export BASE_IMAGE_CONFIG="docker.io/opencode/opencode-cloud-base:latest"
+```
+
+See [Building the Base Image](#building-the-base-image) below.
+
+### Option B: Build Locally
+
+```bash
+# Build the base image
+docker build -t opencode-cloud-base:latest .
+
+# Tag for Docker Hub
+docker tag opencode-cloud-base:latest docker.io/opencode/opencode-cloud-base:latest
+
+# Push (requires Docker Hub account)
+docker push docker.io/opencode/opencode-cloud-base:latest
+```
+
+## Building the Base Image
+
+The base image includes:
+
+- Ubuntu 22.04 LTS
+- Node.js 18+
+- Python 3.10+
+- Git, npm, pnpm
+- opencode server (pre-installed)
+- Essential development tools
+
+### Dockerfile
+
+Create `Dockerfile.base`:
+
+```dockerfile
+FROM ubuntu:22.04
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl wget git \
+    build-essential python3 python3-pip \
+    nodejs npm \
+    # ... other tools
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Install opencode
+RUN npm install -g @opencode/opencode
+
+# Create workspace directory
+RUN mkdir -p /workspace
+WORKDIR /workspace
+
+# Start opencode by default (overridable)
+CMD ["opencode", "serve", "--host", "0.0.0.0", "--port", "3000"]
+```
+
+### Build and Push
+
+```bash
+# Build
+docker build -f Dockerfile.base -t opencode/opencode-cloud-base:latest .
+
+# Tag
+docker tag opencode/opencode-cloud-base:latest \
+  docker.io/opencode/opencode-cloud-base:latest
+
+# Push to Docker Hub
+docker push docker.io/opencode/opencode-cloud-base:latest
+```
+
+## 4. Test the Integration
+
+### Start Local Development Server
+
+```bash
+cd apps/worker
+pnpm dev
+```
+
+You should see:
+
+```
+⛅️ wrangler 4.82.2
+🔥 Rules enabled by environment
+[wrangler] Listening on http://localhost:8787
+```
+
+### Test Health Endpoint
+
+```bash
+curl http://localhost:8787/api/health
+```
+
+Response:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "healthy",
+    "timestamp": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+### Create a Test Session
+
+```bash
+curl -X POST http://localhost:8787/api/sessions \
+  -H 'Authorization: Bearer demo_token' \
+  -H 'Content-Type: application/json' \
+  -d '{"repoUrl": "https://github.com/opencode-ai/opencode.git"}'
+```
+
+If successful:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "status": "provisioning",
+      ...
+    },
+    "webUrl": "https://opencode.cloud/s/550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+### Monitor Session Creation
+
+```bash
+# Check provisioning status
+curl http://localhost:8787/api/sessions/550e8400-e29b-41d4-a716-446655440000 \
+  -H 'Authorization: Bearer demo_token' \
+  | jq '.data.status'
+
+# Wait for "running"
+```
+
+Once `status: "running"`, visit the web URL in your browser.
+
+## 5. Verify Contree Connection
+
+### Check Logs
+
+```bash
+# Development logs show Contree API calls
+cd apps/worker
+pnpm dev
+
+# You should see:
+# [contree] Importing image: docker.io/opencode/opencode-cloud-base:latest
+# [contree] Running: git clone ...
+# [contree] Running: opencode serve
+```
+
+### Check Sandbox
+
+Once a session is provisioning, verify in Contree dashboard:
+
+1. Go to [https://console.contree.co](https://console.contree.co)
+2. Navigate to **Instances**
+3. You should see your sandbox starting up
+
+## Troubleshooting
+
+### "CONTREE_API_KEY not found"
+
+```
+Error: CONTREE_API_KEY is not set in environment
+```
+
+**Solution:**
+
+```bash
+# Set in .dev.vars
+echo "CONTREE_API_KEY=your_key" > apps/worker/.dev.vars
+
+# Restart dev server
+cd apps/worker
+pnpm dev
+```
+
+### "Invalid API key"
+
+```json
+{
+  "ok": false,
+  "error": "unauthorized",
+  "message": "Invalid Contree API key"
+}
+```
+
+**Solution:**
+
+- Verify the key in `.dev.vars` is correct
+- Check it hasn't expired
+- Create a new key in Contree dashboard
+
+### "Image not found: docker.io/opencode/opencode-cloud-base:latest"
+
+```
+Error: Cannot import image: docker.io/opencode/opencode-cloud-base:latest
+```
+
+**Solution:**
+
+1. Build and push the base image:
+   ```bash
+   docker build -f Dockerfile.base -t opencode/opencode-cloud-base:latest .
+   docker push docker.io/opencode/opencode-cloud-base:latest
+   ```
+
+2. Wait a few minutes for registry to sync
+
+3. Retry session creation
+
+### "Session stuck in 'provisioning'"
+
+**Solution:**
+
+1. Check Contree dashboard for errors
+2. Try destroying and recreating:
+   ```bash
+   curl -X DELETE http://localhost:8787/api/sessions/session_id \
+     -H 'Authorization: Bearer token'
+   ```
+3. Create a new session
+
+### "Contree API timeout"
+
+```
+Error: Contree API request timed out
+```
+
+**Solution:**
+
+- Check your internet connection
+- Verify Contree is up: [https://status.contree.co](https://status.contree.co)
+- Increase timeout in `session-provisioner.ts`
+
+## Performance Tuning
+
+### Cold Start Optimization
+
+Contree session creation typically takes:
+
+| Phase | Time |
+|-------|------|
+| Import base image | 10-30s (first time) |
+| Clone repository | 5-15s (depends on size) |
+| Start opencode | 2-5s |
+| **Total** | **~30-50s** |
+
+**To optimize:**
+
+1. **Cache base image** — Only imported once
+2. **Use smaller repos** — Clone time scales with size
+3. **Warm up instances** — Pre-create common templates
+
+### Sandbox Resources
+
+Monitor resource usage in Contree dashboard:
+
+| Resource | Default | Max |
+|----------|---------|-----|
+| vCPU | 2 | 8 |
+| Memory | 2 GB | 32 GB |
+| Disk | 50 GB | 500 GB |
+
+Request higher limits for memory-intensive work.
+
+## Advanced Configuration
+
+### Custom Base Image
+
+Use a different base image per session:
+
+```bash
+curl -X POST http://localhost:8787/api/sessions \
+  -H 'Authorization: Bearer token' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "imageId": "my-custom-image:v1"
+  }'
+```
+
+### Environment Variables in Sandbox
+
+Pass environment variables to the session:
+
+```bash
+curl -X POST http://localhost:8787/api/sessions \
+  -H 'Authorization: Bearer token' \
+  -d '{
+    "environment": {
+      "NODE_ENV": "development",
+      "API_KEY": "secret"
+    }
+  }'
+```
+
+## Next Steps
+
+- [Deploy to production](/guides/deployment)
+- [Run benchmarks](/guides/benchmarking)
+- [Set up monitoring](/guides/monitoring)
+
+---
+
+**Next:** [Deployment Guide →](/guides/deployment)

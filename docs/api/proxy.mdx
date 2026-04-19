@@ -1,0 +1,384 @@
+---
+title: Proxy API
+description: Forward HTTP requests and WebSocket connections to your sandbox
+---
+
+# Proxy API
+
+Access your opencode sandbox environment through the proxy endpoint.
+
+## HTTP Proxy
+
+`GET/POST/PUT/DELETE /s/:sessionId/*`
+
+Forward HTTP requests to the opencode server running in your sandbox.
+
+### How It Works
+
+```
+Your Request
+    ↓
+https://opencode.cloud/s/session_123/...
+    ↓
+[Proxy Handler]
+    ↓
+http://sandbox:3000/...
+    ↓
+opencode server response
+    ↓
+Your Response
+```
+
+### Examples
+
+#### Get File Contents
+
+```bash
+curl https://opencode.cloud/s/session_123/api/files/src/main.ts \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+Response (from opencode API):
+```json
+{
+  "path": "src/main.ts",
+  "content": "export function add(a, b) { return a + b; }",
+  "size": 45,
+  "mimeType": "text/typescript"
+}
+```
+
+#### List Files
+
+```bash
+curl https://opencode.cloud/s/session_123/api/files \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+#### Edit File
+
+```bash
+curl -X PUT https://opencode.cloud/s/session_123/api/files/src/main.ts \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "content": "export function add(a, b) { return a + b + 1; }"
+  }'
+```
+
+#### Run Command
+
+```bash
+curl -X POST https://opencode.cloud/s/session_123/api/exec \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "command": "npm test"
+  }'
+```
+
+Response:
+```json
+{
+  "stdout": "PASS src/main.test.ts\n✓ add(2, 3) == 5\n",
+  "stderr": "",
+  "exitCode": 0
+}
+```
+
+### Request Passthrough
+
+Any HTTP method, path, and headers are forwarded to the sandbox:
+
+```bash
+# These all work:
+curl https://opencode.cloud/s/session_123/api/custom/endpoint \
+  -H 'Custom-Header: value'
+curl -X PATCH https://opencode.cloud/s/session_123/path
+curl -X OPTIONS https://opencode.cloud/s/session_123/test
+```
+
+### Response Passthrough
+
+Status codes, headers, and body are returned exactly as the sandbox responds:
+
+```
+opencode responds with 404 → you get 404
+opencode responds with 200 + JSON → you get 200 + JSON
+opencode responds with 500 → you get 500
+```
+
+---
+
+## WebSocket Proxy
+
+`GET /s/:sessionId/ws` (upgrade to WebSocket)
+
+Open a WebSocket connection to the sandbox for real-time communication.
+
+### Upgrading to WebSocket
+
+```bash
+# Using websocat (or similar tool)
+websocat wss://opencode.cloud/s/session_123/ws \
+  -H "Authorization: Bearer <your_token>"
+```
+
+### WebSocket Flow
+
+```
+1. Client initiates WebSocket upgrade
+2. Proxy validates auth
+3. Proxy connects to sandbox WebSocket
+4. Messages are bidirectionally forwarded
+5. Either side can close connection
+```
+
+### Message Format
+
+Messages are forwarded as-is between client and sandbox:
+
+```javascript
+// Client sends
+ws.send(JSON.stringify({
+  type: 'edit',
+  file: 'src/main.ts',
+  changes: [...]
+}));
+
+// Proxy forwards to sandbox
+// Sandbox responds
+// Proxy forwards back to client
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  // msg = response from sandbox
+};
+```
+
+### Collaboration Channel
+
+The `/ws` endpoint is used for real-time collaboration:
+
+```javascript
+// Yjs CRDT updates flow through this WebSocket
+// See docs/concepts/collaboration.mdx for details
+```
+
+---
+
+## Authentication on Proxy Requests
+
+All proxy requests require the same authentication:
+
+```bash
+# Query parameter
+curl https://opencode.cloud/s/session_123/api/files?token=<your_token>
+
+# Header (preferred)
+curl https://opencode.cloud/s/session_123/api/files \
+  -H 'Authorization: Bearer <your_token>'
+
+# For WebSocket, use query parameter
+websocat wss://opencode.cloud/s/session_123/ws?token=<your_token>
+```
+
+---
+
+## Error Responses
+
+### Session Not Found
+
+```
+HTTP 404
+```
+
+The session doesn't exist or has been destroyed.
+
+### Unauthorized
+
+```
+HTTP 401
+```
+
+Missing or invalid authentication token.
+
+### Session Not Running
+
+```
+HTTP 503
+```
+
+Session is provisioning or paused. Wait and retry.
+
+### Sandbox Error
+
+```
+HTTP <status_from_sandbox>
+```
+
+If the opencode sandbox returns an error, it's passed through:
+
+```bash
+curl https://opencode.cloud/s/session_123/api/invalid
+# GET http://sandbox:3000/api/invalid
+# 404 Not Found
+# Response: 404
+```
+
+---
+
+## Sandbox Endpoints
+
+The opencode server runs on port 3000 inside the sandbox. Common endpoints:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/files` | GET | List files |
+| `/api/files/:path` | GET | Read file |
+| `/api/files/:path` | PUT | Write file |
+| `/api/files/:path` | DELETE | Delete file |
+| `/api/exec` | POST | Run command |
+| `/api/fs/stat` | GET | File metadata |
+| `/api/git/status` | GET | Git status |
+| `/ws` | WebSocket | Real-time collaboration |
+
+*See opencode documentation for complete API.*
+
+---
+
+## Examples
+
+### Example 1: Read and Edit a File
+
+```bash
+SESSION_ID="session_123"
+TOKEN="<your_token>"
+
+# 1. Read current content
+curl https://opencode.cloud/s/$SESSION_ID/api/files/README.md \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.content'
+
+# 2. Edit it
+curl -X PUT https://opencode.cloud/s/$SESSION_ID/api/files/README.md \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "# Updated README"}'
+
+# 3. Verify change
+curl https://opencode.cloud/s/$SESSION_ID/api/files/README.md \
+  -H "Authorization: Bearer $TOKEN" \
+  | jq '.content'
+```
+
+### Example 2: Run Tests
+
+```bash
+curl -X POST https://opencode.cloud/s/session_123/api/exec \
+  -H 'Authorization: Bearer token' \
+  -H 'Content-Type: application/json' \
+  -d '{"command": "npm test"}' \
+  | jq '.stdout'
+```
+
+### Example 3: List Files Recursively
+
+```bash
+curl https://opencode.cloud/s/session_123/api/files?recursive=true \
+  -H 'Authorization: Bearer token' \
+  | jq '.files[] | .path'
+```
+
+### Example 4: WebSocket Collaboration
+
+```javascript
+const ws = new WebSocket(
+  'wss://opencode.cloud/s/session_123/ws?token=<your_token>'
+);
+
+ws.onopen = () => {
+  console.log('Connected to sandbox');
+  
+  // Send a message
+  ws.send(JSON.stringify({
+    type: 'sync',
+    payload: {...}
+  }));
+};
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+  console.log('Received:', msg);
+};
+
+ws.onerror = (error) => {
+  console.error('WebSocket error:', error);
+};
+```
+
+---
+
+## Latency
+
+The proxy adds minimal latency:
+
+| Component | Latency |
+|-----------|---------|
+| Client → Proxy | <50ms (network) |
+| Proxy → Sandbox | <50ms (internal) |
+| Proxy → Client | <50ms (network) |
+| **Total (p95)** | **<200ms** |
+
+For optimal performance:
+- Use keep-alive connections
+- Batch requests where possible
+- Cache responses client-side
+
+---
+
+## Rate Limiting
+
+Proxy requests count toward your session API rate limit:
+
+| Plan | Requests/minute |
+|------|-----------------|
+| Free | 600 (includes proxy) |
+| Pro | 6000 |
+| Enterprise | Unlimited |
+
+Heavy file operations (large uploads) may be slower. Contact support for high-throughput needs.
+
+---
+
+## Best Practices
+
+1. **Check session status before proxying**
+   ```bash
+   # Avoid proxying to provisioning sessions
+   curl https://api.opencode.cloud/api/sessions/session_123 \
+     -H 'Authorization: Bearer token' \
+     | jq '.data.status'
+   ```
+
+2. **Use WebSocket for real-time work**
+   ```javascript
+   // ✅ Real-time editing: WebSocket
+   // ❌ Polling: HTTP GET in loop
+   ```
+
+3. **Batch file operations**
+   ```bash
+   # ❌ Slow: 100 requests for 100 files
+   # ✅ Fast: 1 request for /api/files?recursive=true
+   ```
+
+4. **Cache responses**
+   ```javascript
+   // Cache file contents between edits
+   const cache = new Map();
+   cache.set('src/main.ts', fileContent);
+   ```
+
+---
+
+**Next:** [Guides →](/guides/contree-setup)

@@ -1,0 +1,248 @@
+---
+title: Sessions
+description: Understanding opencode.cloud sessions
+---
+
+# Sessions
+
+A **session** is an isolated opencode instance running in a Contree sandbox. Think of it as a personal coding environment in the cloud.
+
+## What is a Session?
+
+```
+Session = User's AI Coding Environment
+├─ opencode server (running `opencode serve`)
+├─ Real Linux filesystem
+├─ Git repository
+├─ Isolated from other users
+└─ Persistent across disconnects
+```
+
+Each session:
+- Runs in its own **Contree MicroVM** (VM-level isolation)
+- Has a **persistent filesystem** (files survive server restarts)
+- Can be **branched** into parallel exploration paths
+- Can be **shared** with other users for collaboration
+- Has a **web URL** for browser access
+
+## Session Lifecycle
+
+```
+Created
+  ↓
+Provisioning (importing image, cloning repo, starting opencode)
+  ↓
+Running (ready for use)
+  ↓
+Idle → Auto-cleanup (after TTL)
+  ↓
+Destroyed (explicit user action or cleanup)
+```
+
+## Session State
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "user_abc123",
+  "status": "running",
+  "contreeInstanceId": "instance_xyz789",
+  "snapshotId": "snapshot_latest",
+  "createdAt": "2026-04-18T10:30:45.123Z",
+  "updatedAt": "2026-04-18T10:45:30.456Z"
+}
+```
+
+### Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Unique session identifier |
+| `userId` | string | Owner of the session |
+| `status` | enum | `provisioning`, `running`, `paused`, `destroyed` |
+| `contreeInstanceId` | string | ID of the Contree sandbox |
+| `snapshotId` | string | Current filesystem snapshot ID |
+| `createdAt` | ISO8601 | When session was created |
+| `updatedAt` | ISO8601 | When session was last modified |
+
+## Creating a Session
+
+### Simple Session
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
+
+Creates an empty session with a fresh Linux environment.
+
+### Session with Repository
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "repoUrl": "https://github.com/user/project.git"
+  }'
+```
+
+Creates a session with a cloned repository.
+
+### Custom Image
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "imageId": "my-custom-base:latest"
+  }'
+```
+
+Creates a session from a custom Contree image.
+
+## Accessing a Session
+
+Once created, access your session at:
+
+```
+https://opencode.cloud/s/{sessionId}
+```
+
+This loads the opencode web UI running in your sandbox.
+
+## Session Limits
+
+| Limit | Value |
+|-------|-------|
+| Max open sessions per user | 100 |
+| Max idle time before auto-cleanup | 24 hours |
+| Max filesystem size | 100 GB |
+| Max concurrent users per session | 10 |
+| Max API calls per minute | 600 |
+
+## Common Operations
+
+### List Your Sessions
+
+```bash
+curl https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": [
+    { "id": "...", "status": "running", ... },
+    { "id": "...", "status": "running", ... }
+  ]
+}
+```
+
+### Get Session Details
+
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Resume a Session
+
+Sessions automatically resume when you visit their URL. Previous work is preserved.
+
+### Destroy a Session
+
+```bash
+curl -X DELETE https://api.opencode.cloud/api/sessions/{sessionId} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+⚠️ This is permanent. The sandbox is deleted. Filesystem is lost.
+
+## Sharing a Session
+
+### Create a Share Link
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/share \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "expiresIn": 3600
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "shareToken": "share_abc123xyz789",
+    "shareUrl": "https://opencode.cloud/s/{sessionId}?share=share_abc123xyz789",
+    "expiresAt": "2026-04-18T11:30:45.123Z"
+  }
+}
+```
+
+Anyone with the share URL can access your session (read and write) until it expires.
+
+### Revoke Access
+
+```bash
+curl -X DELETE https://api.opencode.cloud/api/sessions/{sessionId}/share/{shareToken} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+## Session Costs
+
+| Operation | Cost |
+|-----------|------|
+| Session creation | $0.10 |
+| Per hour running | $0.50 |
+| Per GB stored | $0.01/month |
+| Per collaborator | Free (up to 10) |
+
+Sessions are billed only while running. Destroyed sessions don't cost anything.
+
+## Best Practices
+
+1. **Name your sessions** — Use descriptive names for easy tracking
+2. **Clean up old sessions** — Destroy sessions you're no longer using
+3. **Create snapshots regularly** — Checkpoint your progress for safety
+4. **Share thoughtfully** — Share tokens have an expiration time
+5. **Monitor usage** — Check how many sessions you have open
+
+## Troubleshooting
+
+### Session Won't Start
+
+Check the status:
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+If `status: "provisioning"` — wait, it's still starting (usually <1 minute).
+
+### Lost Work
+
+Destroyed sessions cannot be recovered. Always create snapshots before risky operations.
+
+### Collaborators Can't Connect
+
+Ensure your session is still running:
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId} \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+If the URL has expired, create a new share token.
+
+---
+
+**Next:** [Branching →](/concepts/branching)

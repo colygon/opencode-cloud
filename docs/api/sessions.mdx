@@ -1,0 +1,334 @@
+---
+title: Sessions API
+description: Create, list, and manage sessions
+---
+
+# Sessions API
+
+Manage your isolated coding environments programmatically.
+
+## Create Session
+
+`POST /api/sessions`
+
+Create a new session (empty or with a cloned repository).
+
+### Request
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "repoUrl": "https://github.com/user/project.git",
+    "imageId": "opencode:latest"
+  }'
+```
+
+### Parameters
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `repoUrl` | string | No | Git repository URL to clone |
+| `imageId` | string | No | Custom Contree image ID (default: opencode base image) |
+| `name` | string | No | Friendly name for the session |
+| `environment` | object | No | Environment variables to set in sandbox |
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "userId": "user_123",
+      "status": "provisioning",
+      "contreeInstanceId": "instance_abc123",
+      "snapshotId": "snapshot_xyz789",
+      "createdAt": "2026-04-18T10:30:45.123Z",
+      "updatedAt": "2026-04-18T10:30:45.123Z"
+    },
+    "webUrl": "https://opencode.cloud/s/550e8400-e29b-41d4-a716-446655440000"
+  }
+}
+```
+
+### Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `201` | Session created successfully |
+| `400` | Invalid request (bad URL, missing required fields) |
+| `401` | Unauthorized (invalid token) |
+| `429` | Rate limited (too many concurrent sessions) |
+
+---
+
+## List Sessions
+
+`GET /api/sessions`
+
+List all sessions owned by the authenticated user.
+
+### Request
+
+```bash
+curl https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Query Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | all | Filter by status: `provisioning`, `running`, `paused`, `destroyed` |
+| `limit` | number | 20 | Max results (1-100) |
+| `offset` | number | 0 | Pagination offset |
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "id": "session_1",
+      "status": "running",
+      "createdAt": "2026-04-18T10:00:00.000Z",
+      "updatedAt": "2026-04-18T10:35:30.456Z"
+    },
+    {
+      "id": "session_2",
+      "status": "paused",
+      "createdAt": "2026-04-17T15:20:10.000Z",
+      "updatedAt": "2026-04-17T18:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "limit": 20,
+    "offset": 0,
+    "total": 2
+  }
+}
+```
+
+---
+
+## Get Session
+
+`GET /api/sessions/:id`
+
+Get details for a specific session.
+
+### Request
+
+```bash
+curl https://api.opencode.cloud/api/sessions/550e8400-e29b-41d4-a716-446655440000 \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "userId": "user_123",
+    "status": "running",
+    "contreeInstanceId": "instance_abc123",
+    "snapshotId": "snapshot_xyz789",
+    "createdAt": "2026-04-18T10:30:45.123Z",
+    "updatedAt": "2026-04-18T10:45:30.456Z"
+  }
+}
+```
+
+### Status Values
+
+| Status | Meaning |
+|--------|---------|
+| `provisioning` | Session is starting (1-2 minutes) |
+| `running` | Ready to use |
+| `paused` | Session paused (idle cleanup) |
+| `destroyed` | Session deleted |
+
+---
+
+## Destroy Session
+
+`DELETE /api/sessions/:id`
+
+Permanently delete a session and its sandbox.
+
+### Request
+
+```bash
+curl -X DELETE https://api.opencode.cloud/api/sessions/550e8400-e29b-41d4-a716-446655440000 \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+### Response
+
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "destroyedAt": "2026-04-18T10:45:30.456Z"
+  }
+}
+```
+
+⚠️ **This is permanent.** The session and all files are deleted immediately.
+
+---
+
+## Session State Machine
+
+```
+Created
+  ├─ (provisioning) — Importing image, cloning repo
+  │    └─ → running (ready)
+  │
+  running (user is active)
+  │  ├─ → paused (idle for 24+ hours)
+  │  ├─ → destroyed (user requests)
+  │  └─ (stays running while accessed)
+  │
+  paused (idle cleanup)
+  │  ├─ → running (user accesses)
+  │  └─ → destroyed (after retention period)
+  │
+  destroyed (final state)
+       (cannot be recovered)
+```
+
+---
+
+## Lifecycle Examples
+
+### Example 1: Create and Access
+
+```bash
+# 1. Create
+curl -X POST https://api.opencode.cloud/api/sessions \
+  -H 'Authorization: Bearer token' \
+  -d '{"repoUrl": "https://github.com/user/project.git"}' \
+  | jq '.data.webUrl'
+# Output: https://opencode.cloud/s/session_123
+
+# 2. Wait for provisioning
+sleep 5
+
+# 3. Check status
+curl https://api.opencode.cloud/api/sessions/session_123 \
+  -H 'Authorization: Bearer token' \
+  | jq '.data.status'
+# Output: "running"
+
+# 4. Visit in browser
+open "https://opencode.cloud/s/session_123"
+
+# 5. When done, destroy
+curl -X DELETE https://api.opencode.cloud/api/sessions/session_123 \
+  -H 'Authorization: Bearer token'
+```
+
+### Example 2: List and Filter
+
+```bash
+# List all running sessions
+curl 'https://api.opencode.cloud/api/sessions?status=running' \
+  -H 'Authorization: Bearer token' \
+  | jq '.data | length'
+
+# List with pagination
+curl 'https://api.opencode.cloud/api/sessions?limit=50&offset=50' \
+  -H 'Authorization: Bearer token'
+```
+
+---
+
+## Session Costs
+
+| Operation | Cost |
+|-----------|------|
+| Session creation | $0.10 |
+| Per hour running | $0.50 |
+| Per GB stored | $0.01/month |
+
+Billing starts when `status: "running"` and stops when destroyed.
+
+---
+
+## Error Handling
+
+### Session Not Found
+
+```json
+{
+  "ok": false,
+  "error": "not_found",
+  "message": "Session 'invalid_id' does not exist"
+}
+```
+
+### Session Already Destroyed
+
+```json
+{
+  "ok": false,
+  "error": "session_destroyed",
+  "message": "This session has been permanently deleted"
+}
+```
+
+### Quota Exceeded
+
+```json
+{
+  "ok": false,
+  "error": "quota_exceeded",
+  "message": "You have reached your limit of 100 concurrent sessions"
+}
+```
+
+---
+
+## Best Practices
+
+1. **Always destroy idle sessions**
+   ```bash
+   # Clean up after you're done
+   curl -X DELETE https://api.opencode.cloud/api/sessions/:id \
+     -H 'Authorization: Bearer token'
+   ```
+
+2. **Check status before using**
+   ```bash
+   # Don't assume it's ready immediately
+   status=$(curl https://api.opencode.cloud/api/sessions/:id \
+     -H 'Authorization: Bearer token' | jq '.data.status')
+   [ "$status" = "running" ] || echo "Still provisioning..."
+   ```
+
+3. **Create snapshots before risky work**
+   ```bash
+   # Checkpoint progress
+   curl -X POST https://api.opencode.cloud/api/sessions/:id/snapshot \
+     -H 'Authorization: Bearer token'
+   ```
+
+4. **Handle errors gracefully**
+   ```bash
+   if ! curl ... ; then
+     echo "API error: check token and session ID"
+     exit 1
+   fi
+   ```
+
+---
+
+**Next:** [Branching API →](/api/branching)

@@ -1,0 +1,322 @@
+---
+title: Branching
+description: Explore multiple approaches with branching execution
+---
+
+# Branching
+
+**Branching** lets you checkpoint your progress and explore multiple approaches in parallel. It's like Git for your coding session.
+
+## Why Branching?
+
+Imagine the AI suggests an approach to solve your problem. You could:
+
+1. **Try it** — and if it fails, undo everything
+2. **Branch** — create a checkpoint, try it, and instantly rollback if needed
+
+Branching lets you:
+- **Explore safely** — No fear of losing progress
+- **Try multiple strategies** — Run them in parallel
+- **Compare outcomes** — Keep the best result
+- **Understand failures** — Rollback and see what went wrong
+
+## How It Works
+
+Every session has a **branch tree**:
+
+```
+Snapshot 1 (initial state)
+    ↓
+Snapshot 2 (after first edit)
+    ├─ Snapshot 3 (main branch, current)
+    │   ↓
+    │ Snapshot 4 (after AI suggestion)
+    │
+    └─ Snapshot 2b (experimental branch)
+        ↓
+      Snapshot 2b-1 (first attempt)
+        ├─ Snapshot 2b-2 (second attempt, current)
+        │   ↓
+        │ Snapshot 2b-3 (rolled back once)
+        │
+        └─ Snapshot 2b-1b (different approach)
+```
+
+Each snapshot is **immutable** and can be restored instantly.
+
+## Core Operations
+
+### 1. Create a Snapshot (Checkpoint)
+
+Checkpoint your current progress:
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/snapshot \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshotId": "snapshot_abc123",
+    "createdAt": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+Now you can branch from this point.
+
+### 2. Branch (Create a Fork)
+
+Create a new branch to explore a different approach:
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/branch \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "snapshotId": "snapshot_abc123",
+    "name": "try-approach-a"
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "id": "branch_xyz789",
+    "name": "try-approach-a",
+    "parentSnapshotId": "snapshot_abc123",
+    "snapshotId": "snapshot_xyz789",
+    "createdAt": "2026-04-18T10:30:45.123Z"
+  }
+}
+```
+
+Your session now has a new branch. Continue editing and exploring.
+
+### 3. Rollback (Restore)
+
+If an approach doesn't work, rollback to a previous snapshot:
+
+```bash
+curl -X POST https://api.opencode.cloud/api/sessions/{sessionId}/rollback \
+  -H 'Authorization: Bearer <your_token>' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "snapshotId": "snapshot_abc123"
+  }'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": {
+    "snapshotId": "snapshot_abc123",
+    "rolledBackAt": "2026-04-18T10:35:20.456Z"
+  }
+}
+```
+
+Your session instantly reverts to that snapshot. All changes after it are discarded.
+
+### 4. View Branch Tree
+
+See your session's exploration history:
+
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId}/branches \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+Response:
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "snapshotId": "snapshot_1",
+      "parentSnapshotId": null,
+      "children": [
+        {
+          "snapshotId": "snapshot_2",
+          "parentSnapshotId": "snapshot_1",
+          "children": [
+            { "snapshotId": "snapshot_3", ... },
+            { "snapshotId": "snapshot_2b", ... }
+          ]
+        }
+      ],
+      "createdAt": "2026-04-18T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+## Use Cases
+
+### Parallel Exploration (MCTS for Code)
+
+```
+Goal: Implement a feature
+
+User (with AI help):
+1. Create snapshot
+2. Try approach A in branch 1
+3. Try approach B in branch 2
+4. Try approach C in branch 3
+5. Compare results
+6. Rollback to best approach
+7. Continue from there
+```
+
+### Safe Experimentation
+
+```
+Feature branch:
+1. Checkpoint before refactoring
+2. Refactor code
+3. Run tests
+4. If tests fail → rollback
+5. Try different refactoring
+```
+
+### Debugging
+
+```
+Bug appears after snapshot:
+1. Rollback to before the bug
+2. Create branch to investigate
+3. Isolate the problematic change
+4. Rollback to main branch
+5. Fix properly
+```
+
+### Code Review
+
+```
+Collaborative review:
+1. Create snapshot
+2. Reviewer branches to suggest changes
+3. Original author branches to try alternatives
+4. Compare both approaches
+5. Merge best one into main branch
+```
+
+## Snapshot Metadata
+
+Each snapshot contains:
+
+```json
+{
+  "id": "snapshot_abc123",
+  "sessionId": "session_xyz789",
+  "parentSnapshotId": "snapshot_prev123",
+  "contreeImageId": "image_sandbox_abc",
+  "createdAt": "2026-04-18T10:30:45.123Z",
+  "createdBy": "user_123",
+  "metadata": {
+    "branch": "main",
+    "description": "After user edit to src/main.py",
+    "filesChanged": 1,
+    "linesAdded": 5,
+    "linesRemoved": 2
+  }
+}
+```
+
+## Branching Limits
+
+| Limit | Value |
+|-------|-------|
+| Max snapshots per session | 1000 |
+| Max branch depth | Unlimited |
+| Max snapshots stored | 7 days or 1000 snapshots |
+| Time to snapshot | < 5 seconds |
+| Time to rollback | < 2 seconds |
+
+## Performance
+
+```
+Operation      Time    Notes
+─────────────────────────────
+Snapshot       1-2s    Depends on filesystem size
+Branch         <100ms  Instant (just metadata)
+Rollback       1-2s    Depends on snapshot size
+View tree      <100ms  Returns metadata only
+```
+
+## Cost Impact
+
+Snapshots are free, but:
+- **Storage**: Each snapshot occupies disk space in your sandbox
+- **Cleanup**: Old snapshots are automatically cleaned up after 7 days
+- **Quotas**: You can have up to 1000 snapshots per session
+
+## Best Practices
+
+1. **Name meaningfully**
+   ```bash
+   "main-feature", "test-approach-1", "bug-investigation"
+   # Not: "snapshot-1", "s2", "tmp"
+   ```
+
+2. **Create before risky operations**
+   ```
+   Before:
+   - Major refactoring
+   - Trying new frameworks
+   - Running untested AI suggestions
+   ```
+
+3. **Cleanup old branches**
+   ```bash
+   # Rollback to main branch before deleting exploratory branches
+   curl -X POST .../rollback -d '{"snapshotId": "main_snapshot"}'
+   ```
+
+4. **Use with collaboration**
+   ```
+   Team workflow:
+   1. Main branch (shared)
+   2. Each user creates branch for their work
+   3. Experiment independently
+   4. Rollback to main to sync up
+   5. Merge by copying files to main branch
+   ```
+
+## Troubleshooting
+
+### Can't Rollback to Snapshot
+
+Snapshot might have been cleaned up. Check:
+```bash
+curl https://api.opencode.cloud/api/sessions/{sessionId}/branches \
+  -H 'Authorization: Bearer <your_token>'
+```
+
+If the snapshot doesn't appear, it was deleted after 7 days.
+
+### Rollback Takes Too Long
+
+Large filesystem snapshots take longer to restore. Try:
+- Creating snapshots more frequently (before large changes)
+- Cleaning up large files before snapshotting
+- Using branches for exploratory work (keep main branch clean)
+
+### Lost Work After Rollback
+
+Rollback is permanent. Always create a snapshot of your work before rolling back:
+```bash
+# Before rollback:
+POST .../snapshot  # Save current state
+POST .../rollback  # Then rollback
+```
+
+---
+
+**Next:** [Collaboration →](/concepts/collaboration)

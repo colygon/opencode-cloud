@@ -1,0 +1,395 @@
+---
+title: Architecture
+description: Deep dive into opencode.cloud's architecture
+---
+
+# Architecture
+
+opencode.cloud is built on three core layers:
+
+## Control Plane (Cloudflare Workers)
+
+**Responsibility:** Route requests, manage authentication, orchestrate Contree, persist session state
+
+```
+HTTP Request
+    ↓
+[Auth Middleware] — JWT/API key validation
+    ↓
+[Router] — Route to handler
+    ↓
+[Handler] — Business logic (CRUD, branching)
+    ↓
+[KV Store] — Session persistence
+    ↓
+[Contree Client] — API calls to sandboxes
+```
+
+### Key Components
+
+- **Auth Middleware** (`apps/worker/src/middleware/auth.ts`)
+  - JWT verification via `jose`
+  - API key lookup in KV
+  - Per-route protection
+
+- **Session Routes** (`apps/worker/src/routes/sessions.ts`)
+  - `POST /api/sessions` — create new session
+  - `GET /api/sessions` — list user's sessions
+  - `GET /api/sessions/:id` — get session details
+  - `DELETE /api/sessions/:id` — destroy session
+
+- **Branching Routes** (`apps/worker/src/routes/branches.ts`)
+  - `POST /api/sessions/:id/snapshot` — create checkpoint
+  - `POST /api/sessions/:id/branch` — fork from snapshot
+  - `POST /api/sessions/:id/rollback` — restore to snapshot
+  - `GET /api/sessions/:id/branches` — view branch tree
+
+- **Proxy Routes** (`apps/worker/src/routes/proxy.ts`)
+  - `GET/POST/PUT/DELETE /s/:sessionId/*` — HTTP proxy
+  - WebSocket upgrade handling
+
+- **Session Provisioner** (`apps/worker/src/lib/session-provisioner.ts`)
+  - `provisionSession()` — create new Contree sandbox
+  - `snapshotSession()` — create immutable checkpoint
+  - `branchFromSnapshot()` — fork sandbox from checkpoint
+  - `rollbackToSnapshot()` — restore to previous state
+
+### Data Flow: Create Session
+
+```
+1. POST /api/sessions
+   ├─ Auth check (JWT/API key)
+   ├─ Create session record in KV
+   ├─ Call provisionSession()
+   │  ├─ Import base opencode image
+   │  ├─ Clone repo (if provided)
+   │  ├─ Run `opencode serve`
+   │  └─ Return snapshot ID
+   ├─ Update session with snapshot ID
+   └─ Return web URL
+```
+
+## Compute Layer (Contree Sandboxes)
+
+**Responsibility:** Run isolated opencode instances with mutable filesystem state
+
+Each session gets its own MicroVM:
+
+```
+┌─────────────────────────────────────┐
+│ Contree MicroVM (One per Session)   │
+├─────────────────────────────────────┤
+│ • opencode server (port 3000)       │
+│ • Real Linux filesystem             │
+│ • Git, npm, Python, etc.            │
+│ • Network access                    │
+│ • Full root permissions             │
+└─────────────────────────────────────┘
+       │
+       ├─ /workspace/          (project files)
+       ├─ /home/opencode/      (opencode data)
+       └─ /root/               (system)
+
+Immutable Snapshots (Git-like):
+  snapshot_1 ─── snapshot_2 ─── snapshot_3
+       │
+       └─── snapshot_2b (branch)
+            └─── snapshot_2b-1 (nested branch)
+```
+
+### Why Contree?
+
+- **Real Linux** — opencode needs native tools (git, npm, shell)
+- **Immutable snapshots** — Perfect for branching and rollback
+- **VM-level isolation** — Stronger than containers
+- **No infrastructure** — Contree handles scaling, networking, cleanup
+- **Audit trail** — Every state change is captured as an immutable snapshot
+
+## Collaboration Layer (Yjs CRDT)
+
+**Responsibility:** Sync document edits across multiple users without conflicts
+
+```
+User A                          User B
+  │                               │
+  ├─ Edit line 5                  ├─ Edit line 10
+  │  (Y.Text update)              │  (Y.Text update)
+  │  │                            │  │
+  └──┴────────────────────────────┴──┘
+           Yjs CRDT Engine
+              │
+         Conflict-free merge
+         No resolving needed
+```
+
+### Components
+
+- **DocumentProvider** (`packages/collab/src/provider.ts`)
+  - Wraps Yjs `Y.Doc`
+  - Manages document state
+  - Tracks client presence (cursor positions)
+  - Emits updates for broadcasting
+
+- **CollaborationServer** (`packages/collab/src/server.ts`)
+  - Manages connected clients
+  - Handles message routing
+  - Broadcasts updates
+  - Maintains presence awareness
+
+### Why Yjs?
+
+- **CRDT (Conflict-free Replicated Data Type)** — Merges without coordination
+- **Works offline** — Clients sync when reconnecting
+- **Minimal bandwidth** — Only changes are sent
+- **Proven** — Used by Figma, Notion, others
+
+## Storage Layers
+
+### KV (Session Store)
+
+Fast, globally distributed key-value store for:
+- Session metadata
+- User tokens
+- Presence data
+- Temporary cache
+
+```
+Keys:
+  session:{id}           → Session object
+  user-sessions:{userId} → List of session IDs
+  snapshot:{id}          → Snapshot metadata
+  branch:{id}            → Branch metadata
+  user-index:{userId}    → User profile
+```
+
+### D1 (SQLite Database)
+
+Relational database for:
+- User accounts (not yet implemented)
+- API keys (not yet implemented)
+- Usage metrics (not yet implemented)
+- Billing data (not yet implemented)
+
+```sql
+-- Future tables
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE,
+  created_at TIMESTAMP
+);
+
+CREATE TABLE api_keys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  prefix TEXT,
+  hash TEXT,
+  created_at TIMESTAMP
+);
+
+CREATE TABLE sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  status TEXT,
+  created_at TIMESTAMP
+);
+
+CREATE TABLE usage (
+  id TEXT PRIMARY KEY,
+  session_id TEXT REFERENCES sessions(id),
+  event TEXT,
+  details JSON,
+  timestamp TIMESTAMP
+);
+```
+
+### R2 (Object Storage)
+
+Large file storage for:
+- Project exports
+- Session backups
+- User files (not yet implemented)
+
+## Request Flow: Complete Example
+
+### 1. Create Session with Repo
+
+```
+User clicks "New Session" with GitHub URL
+│
+POST /api/sessions
+├─ Body: { "repoUrl": "https://github.com/user/project" }
+│
+Auth Middleware
+├─ Check Authorization header
+├─ Verify JWT signature
+├─ Set userId on context
+│
+Session Handler
+├─ Generate session ID
+├─ Create initial session record in KV
+├─ Call provisionSession()
+│  ├─ Contree API: importImage("opencode:latest")
+│  ├─ Contree API: run({ image_id, shell: "git clone ..." })
+│  │  └─ Returns new image_id (snapshot after clone)
+│  ├─ Contree API: run({ image_id, shell: "opencode serve" })
+│  │  └─ Returns final image_id (snapshot after serve)
+│  └─ Return { snapshotId, contreeInstanceId }
+├─ Update session record in KV
+└─ Return CreateSessionResponse
+
+Response:
+{
+  "ok": true,
+  "data": {
+    "session": { ... },
+    "webUrl": "https://opencode.cloud/s/session-id"
+  }
+}
+```
+
+### 2. User Visits Web URL
+
+```
+User opens https://opencode.cloud/s/session-id
+│
+GET /s/session-id/*
+├─ Auth check (user owns session)
+├─ Load session from KV
+├─ Check session status (running)
+├─ Get sandbox URL from session metadata
+├─ Forward request to:
+│  GET http://sandbox.internal:3000/...
+│  (opencode web UI)
+│
+Browser receives HTML/JS/CSS
+└─ User sees opencode web UI
+```
+
+### 3. User Makes Edit
+
+```
+User edits file in opencode web UI
+│
+WebSocket message to /s/session-id/collab
+├─ Yjs update message
+├─ Broadcast to other users
+├─ Update DocumentProvider state
+├─ Emit change event
+│
+Other users' browsers
+├─ Receive Yjs update
+├─ Apply to local Y.Doc (CRDT merge)
+└─ UI reflects change (no conflicts)
+```
+
+### 4. User Creates Snapshot
+
+```
+User clicks "Checkpoint"
+│
+POST /api/sessions/:id/snapshot
+├─ Auth check
+├─ Load session
+├─ Call snapshotSession()
+│  └─ Contree API: run({ image_id, shell: "true" })
+│     └─ Returns new immutable snapshot_id
+├─ Create snapshot record in KV
+├─ Link to session
+└─ Return snapshot metadata
+```
+
+### 5. User Branches
+
+```
+User clicks "Try Different Approach" on a snapshot
+│
+POST /api/sessions/:id/branch
+├─ Body: { "snapshotId": "snapshot_123" }
+├─ Auth check
+├─ Load snapshot
+├─ Call branchFromSnapshot()
+│  └─ Contree: snapshot_123 is now a branch point
+├─ Create branch metadata in KV
+└─ Return branch info
+
+Now user has:
+  Main branch: snapshot_1 → snapshot_2 → snapshot_3 (current)
+  Experiment: snapshot_2 → snapshot_2b (branch point)
+                           └─ snapshot_2b-1 (current)
+```
+
+## Deployment
+
+### Development
+
+```bash
+cd apps/worker
+pnpm dev
+```
+
+Local Wrangler dev server with:
+- Hot reload
+- KV namespace mock
+- D1 database mock
+
+### Production
+
+```bash
+cd apps/worker
+pnpm deploy
+```
+
+Deploys to Cloudflare Workers with:
+- Real KV namespace
+- Real D1 database
+- Real Contree API calls
+- Edge routing across all Cloudflare locations
+
+## Scaling Characteristics
+
+| Component | Bottleneck | Solution |
+|-----------|-----------|----------|
+| **Workers** | CPU/memory per request | Cloudflare auto-scales |
+| **KV** | Eventually consistent | Use polling for critical data |
+| **D1** | SQL write throughput | Batch writes, async jobs |
+| **Contree** | Sandbox creation time | Pre-warmed images, snapshots |
+| **Bandwidth** | WebSocket connections | Cloudflare CDN handles |
+
+## Security
+
+### Defense in Depth
+
+1. **Auth** — JWT + API key before any action
+2. **Isolation** — Each user's sessions in separate KV keys
+3. **Sandboxing** — Contree's VM-level isolation
+4. **Path traversal** — VFS adapter blocks `../` paths
+5. **Rate limiting** — Middleware throttles per user
+6. **Encryption** — HTTPS for all traffic
+7. **Audit** — Immutable snapshots log all changes
+
+### Threat Model
+
+| Threat | Mitigation |
+|--------|-----------|
+| Unauthorized access | JWT validation, KV isolation |
+| Cross-user data leak | Sandbox + KV ownership checks |
+| Code execution escape | Contree's hypervisor isolation |
+| Path traversal | VFS path validation |
+| Replay attacks | JWT exp + signature verification |
+| DoS | Rate limiting, resource quotas |
+
+## Future Architecture Changes
+
+### When we scale to 10k+ users:
+
+- **Add Redis** for KV cache (faster than Cloudflare KV)
+- **Add async job queue** for long-running operations
+- **Add analytics** to D1 for usage tracking
+- **Add CDN** for static assets
+- **Add observability** (tracing, metrics, logs)
+
+Current architecture handles this gracefully — no rearchitecting needed.
+
+---
+
+**Next:** [Learn about Sessions →](/concepts/sessions)

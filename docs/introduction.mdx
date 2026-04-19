@@ -1,0 +1,163 @@
+---
+title: Introduction
+description: Welcome to opencode.cloud documentation
+---
+
+# opencode.cloud
+
+**Hosted AI coding agent with branching execution and real-time collaboration**
+
+opencode.cloud is a serverless platform that brings [opencode](https://github.com/anomalyco/opencode) — the open-source AI coding agent — to the web. Every user gets an isolated sandbox running opencode, accessible from any browser with zero local setup.
+
+## What Makes It Special
+
+### 🌳 Branching Execution
+
+Unlike other hosted coding environments, opencode.cloud lets you:
+- **Checkpoint** the AI's progress at any point
+- **Fork** into parallel exploration branches
+- **Try multiple approaches** simultaneously from the same starting point
+- **Rollback** instantly if something goes wrong
+- **Compare outcomes** and keep the best result
+
+This enables **Monte Carlo Tree Search over solution strategies** — something no other platform offers.
+
+### 👥 Real-Time Collaboration
+
+- Share a session URL with your team
+- Multiple users edit files simultaneously with conflict-free CRDT sync
+- See collaborators' cursor positions in real-time
+- Chat with the AI together
+
+### ⚡ Zero Setup
+
+No installation, no API keys to manage, no environment configuration. Click a button and start coding with AI.
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Isolated Sandboxes** | Each session runs in its own MicroVM with full Linux environment |
+| **Immutable Snapshots** | Git-like checkpoints of execution state for branching and rollback |
+| **Multi-User Editing** | Yjs CRDT for conflict-free concurrent editing |
+| **Session Persistence** | State survives disconnects and server restarts |
+| **Real Tools** | Full access to git, npm, shell, and everything opencode provides |
+| **Enterprise Auth** | JWT + API key authentication with role-based access |
+
+## Platform Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Browser (User)                                                  │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │ HTTPS + WebSocket
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Cloudflare Workers (Control Plane)                              │
+│ • Session lifecycle management                                  │
+│ • JWT + API key authentication                                  │
+│ • Branching orchestration                                       │
+│ • HTTP/WebSocket proxy                                          │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │ Contree API
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Contree Sandbox (MicroVM)                                       │
+│ • opencode server (headless API)                                │
+│ • Real Linux filesystem with git, npm, shell                    │
+│ • Immutable snapshots for branching                             │
+│ • Full network access                                           │
+└──────────────────────┬──────────────────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ AI Models + Tool Execution                                      │
+│ • 75+ LLM providers (OpenAI, Anthropic, Google, Groq, etc.)     │
+│ • File operations, shell commands, LSP diagnostics              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Why Contree?
+
+opencode.cloud runs on **Contree** — a managed sandbox platform with unique capabilities:
+
+- **Real Linux environments** — No container limitations, everything opencode needs works natively
+- **Immutable snapshots** — Git-like branching with instant rollback
+- **VM-level isolation** — Stronger security than containers
+- **No infrastructure to manage** — We focus on features, not DevOps
+
+## Getting Started
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in 5 minutes
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/sessions"
+  >
+    Full API documentation
+  </Card>
+  <Card
+    title="Concepts"
+    icon="lightbulb"
+    href="/concepts/sessions"
+  >
+    Understand sessions, branching, and collaboration
+  </Card>
+  <Card
+    title="Contree Setup"
+    icon="plug"
+    href="/guides/contree-setup"
+  >
+    Integrate with Contree sandboxes
+  </Card>
+</CardGroup>
+
+## Use Cases
+
+### Solo Development
+Use opencode as a personal AI coding assistant, accessible from any device. No installation, no setup.
+
+### Team Collaboration
+Share a live session with your team. Collaborate on the same files with the AI as you discuss approaches.
+
+### AI Experimentation
+Fork your progress, try multiple strategies, and compare results. Keep the best outcome.
+
+### Education
+Teach programming with an AI assistant that everyone can access instantly.
+
+### Prototyping
+Quickly spin up AI-assisted prototypes without managing infrastructure.
+
+## Status
+
+- ✅ **Platform foundation complete** — Ready for production deployment
+- ✅ **All core APIs implemented** — Session management, branching, collaboration
+- ✅ **Type-safe codebase** — TypeScript strict mode, comprehensive error handling
+- 🔑 **Awaiting Contree API key** — To validate cold starts and end-to-end workflows
+
+See [BUILD_STATUS.md](https://github.com/colygon/opencode-cloud/blob/main/BUILD_STATUS.md) for detailed progress.
+
+## Next Steps
+
+1. **Explore the [Quickstart](/quickstart)** to understand the workflow
+2. **Read about [Sessions](/concepts/sessions)** — the core concept
+3. **Review the [API Reference](/api/sessions)** for your use case
+4. **Set up [Contree integration](/guides/contree-setup)** for production
+
+## Support
+
+- 📖 **Documentation** — You're reading it!
+- 💬 **GitHub Issues** — [Report bugs or request features](https://github.com/colygon/opencode-cloud/issues)
+- 🤝 **Contributing** — [Help us build](/development/contributing)
+
+---
+
+Ready to bring AI-assisted coding to the web? [Get Started →](/quickstart)
