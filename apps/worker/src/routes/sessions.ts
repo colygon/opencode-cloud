@@ -15,11 +15,11 @@ import {
 
 const sessions = new Hono<AuthEnv>();
 
-sessions.use("/api/sessions/*", authMiddleware);
-sessions.use("/api/sessions", authMiddleware);
+sessions.use("/sessions/*", authMiddleware);
+sessions.use("/sessions", authMiddleware);
 
-/** POST /api/sessions — Create a new session */
-sessions.post("/api/sessions", async (c) => {
+/** POST /sessions — Create a new session */
+sessions.post("/sessions", async (c) => {
   const userId = c.get("userId");
   const body = await c.req.json<CreateSessionRequest>();
   const contree = getContreeClient(c.env);
@@ -97,8 +97,8 @@ sessions.post("/api/sessions", async (c) => {
   return c.json<ApiResponse<CreateSessionResponse>>({ ok: true, data: response }, 201);
 });
 
-/** GET /api/sessions — List user's sessions */
-sessions.get("/api/sessions", async (c) => {
+/** GET /sessions — List user's sessions */
+sessions.get("/sessions", async (c) => {
   const userId = c.get("userId");
 
   const userSessionsKey = `user-sessions:${userId}`;
@@ -116,8 +116,8 @@ sessions.get("/api/sessions", async (c) => {
   return c.json<ApiResponse<Session[]>>({ ok: true, data: results });
 });
 
-/** GET /api/sessions/:id — Get session details */
-sessions.get("/api/sessions/:id", async (c) => {
+/** GET /sessions/:id — Get session details */
+sessions.get("/sessions/:id", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 
@@ -140,8 +140,8 @@ sessions.get("/api/sessions/:id", async (c) => {
   return c.json<ApiResponse<Session>>({ ok: true, data: session });
 });
 
-/** DELETE /api/sessions/:id — Destroy session */
-sessions.delete("/api/sessions/:id", async (c) => {
+/** DELETE /sessions/:id — Destroy session */
+sessions.delete("/sessions/:id", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 

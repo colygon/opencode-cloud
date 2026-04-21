@@ -17,7 +17,7 @@ import {
 
 const branches = new Hono<AuthEnv>();
 
-branches.use("/api/sessions/:id/*", authMiddleware);
+branches.use("/sessions/:id/*", authMiddleware);
 
 /** Helper to load and authorize a session */
 async function loadSession(
@@ -32,8 +32,8 @@ async function loadSession(
   return session;
 }
 
-/** POST /api/sessions/:id/snapshot — Create a checkpoint */
-branches.post("/api/sessions/:id/snapshot", async (c) => {
+/** POST /sessions/:id/snapshot — Create a checkpoint */
+branches.post("/sessions/:id/snapshot", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 
@@ -112,8 +112,8 @@ branches.post("/api/sessions/:id/snapshot", async (c) => {
   }
 });
 
-/** POST /api/sessions/:id/branch — Fork from a snapshot */
-branches.post("/api/sessions/:id/branch", async (c) => {
+/** POST /sessions/:id/branch — Fork from a snapshot */
+branches.post("/sessions/:id/branch", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 
@@ -201,8 +201,8 @@ branches.post("/api/sessions/:id/branch", async (c) => {
   }
 });
 
-/** POST /api/sessions/:id/rollback — Rollback to a snapshot ID */
-branches.post("/api/sessions/:id/rollback", async (c) => {
+/** POST /sessions/:id/rollback — Rollback to a snapshot ID */
+branches.post("/sessions/:id/rollback", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 
@@ -270,8 +270,8 @@ branches.post("/api/sessions/:id/rollback", async (c) => {
   }
 });
 
-/** GET /api/sessions/:id/branches — Get the branch tree for a session */
-branches.get("/api/sessions/:id/branches", async (c) => {
+/** GET /sessions/:id/branches — Get the branch tree for a session */
+branches.get("/sessions/:id/branches", async (c) => {
   const sessionId = c.req.param("id");
   const userId = c.get("userId");
 
